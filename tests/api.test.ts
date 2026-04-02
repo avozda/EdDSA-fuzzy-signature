@@ -23,170 +23,169 @@ describe('API', () => {
   }
 
   describe('enroll', () => {
-    it('should enroll biometric and return vk and sketch', () => {
+    it('should enroll biometric and return vk and sketch', async () => {
       const biometric = randomBytes(32);
-      const { vk, sketch } = enroll(biometric);
+      const { vk, sketch } = await enroll(biometric);
       
       expect(vk).toBeInstanceOf(Uint8Array);
       expect(sketch).toBeInstanceOf(Uint8Array);
-      expect(vk.length).toBe(33); // Compressed public key
+      expect(vk.length).toBe(32); // Packed BabyJubJub public key
       expect(sketch.length).toBeGreaterThan(0);
     });
     
-    it('should produce different vk for different biometrics', () => {
+    it('should produce different vk for different biometrics', async () => {
       const bio1 = randomBytes(32);
       const bio2 = randomBytes(32);
       
-      const result1 = enroll(bio1);
-      const result2 = enroll(bio2);
+      const result1 = await enroll(bio1);
+      const result2 = await enroll(bio2);
       
       expect(Buffer.from(result1.vk).equals(Buffer.from(result2.vk))).toBe(false);
     });
     
     it('should throw for empty biometric', () => {
       const emptyBiometric = new Uint8Array(0);
-      expect(() => enroll(emptyBiometric)).toThrow('Biometric input cannot be empty');
+      return expect(enroll(emptyBiometric)).rejects.toThrow('Biometric input cannot be empty');
     });
     
-    it('should handle biometric of different lengths', () => {
+    it('should handle biometric of different lengths', async () => {
       const shortBio = randomBytes(16);
       const longBio = randomBytes(64);
       
-      // Should not throw for non-standard lengths
-      expect(() => enroll(shortBio)).not.toThrow();
-      expect(() => enroll(longBio)).not.toThrow();
+      await expect(enroll(shortBio)).resolves.toBeDefined();
+      await expect(enroll(longBio)).resolves.toBeDefined();
     });
   });
   
   describe('sign', () => {
-    it('should sign a message with correct biometric', () => {
+    it('should sign a message with correct biometric', async () => {
       const biometric = randomBytes(32);
-      const { sketch } = enroll(biometric);
+      const { sketch } = await enroll(biometric);
       
       const message = new TextEncoder().encode('Test message');
-      const signature = sign(biometric, sketch, message);
+      const signature = await sign(biometric, sketch, message);
       
       expect(signature).toBeInstanceOf(Uint8Array);
       expect(signature.length).toBe(64);
     });
     
-    it('should throw FuzzyExtractionError for completely different biometric', () => {
+    it('should throw FuzzyExtractionError for completely different biometric', async () => {
       const bio1 = randomBytes(32);
       const bio2 = randomBytes(32);
       
-      const { sketch } = enroll(bio1);
+      const { sketch } = await enroll(bio1);
       const message = new TextEncoder().encode('Test message');
       
-      expect(() => sign(bio2, sketch, message)).toThrow(FuzzyExtractionError);
+      await expect(sign(bio2, sketch, message)).rejects.toBeInstanceOf(FuzzyExtractionError);
     });
     
-    it('should produce deterministic signatures with same inputs', () => {
+    it('should produce deterministic signatures with same inputs', async () => {
       const biometric = randomBytes(32);
-      const { sketch } = enroll(biometric);
+      const { sketch } = await enroll(biometric);
       
       const message = new TextEncoder().encode('Test message');
       
-      const sig1 = sign(biometric, sketch, message);
-      const sig2 = sign(biometric, sketch, message);
+      const sig1 = await sign(biometric, sketch, message);
+      const sig2 = await sign(biometric, sketch, message);
       
       expect(Buffer.from(sig1).equals(Buffer.from(sig2))).toBe(true);
     });
   });
   
   describe('verify', () => {
-    it('should verify a valid signature', () => {
+    it('should verify a valid signature', async () => {
       const biometric = randomBytes(32);
-      const { vk, sketch } = enroll(biometric);
+      const { vk, sketch } = await enroll(biometric);
       
       const message = new TextEncoder().encode('Test message');
-      const signature = sign(biometric, sketch, message);
+      const signature = await sign(biometric, sketch, message);
       
-      const isValid = verify(vk, message, signature);
+      const isValid = await verify(vk, message, signature);
       expect(isValid).toBe(true);
     });
     
-    it('should reject signature with wrong message', () => {
+    it('should reject signature with wrong message', async () => {
       const biometric = randomBytes(32);
-      const { vk, sketch } = enroll(biometric);
+      const { vk, sketch } = await enroll(biometric);
       
       const message = new TextEncoder().encode('Test message');
-      const signature = sign(biometric, sketch, message);
+      const signature = await sign(biometric, sketch, message);
       
       const wrongMessage = new TextEncoder().encode('Wrong message');
-      const isValid = verify(vk, wrongMessage, signature);
+      const isValid = await verify(vk, wrongMessage, signature);
       
       expect(isValid).toBe(false);
     });
     
-    it('should reject signature with wrong vk', () => {
+    it('should reject signature with wrong vk', async () => {
       const bio1 = randomBytes(32);
       const bio2 = randomBytes(32);
       
-      const { sketch: sketch1 } = enroll(bio1);
-      const { vk: vk2 } = enroll(bio2);
+      const { sketch: sketch1 } = await enroll(bio1);
+      const { vk: vk2 } = await enroll(bio2);
       
       const message = new TextEncoder().encode('Test message');
-      const signature = sign(bio1, sketch1, message);
+      const signature = await sign(bio1, sketch1, message);
       
-      const isValid = verify(vk2, message, signature);
+      const isValid = await verify(vk2, message, signature);
       expect(isValid).toBe(false);
     });
     
-    it('should reject corrupted signature', () => {
+    it('should reject corrupted signature', async () => {
       const biometric = randomBytes(32);
-      const { vk, sketch } = enroll(biometric);
+      const { vk, sketch } = await enroll(biometric);
       
       const message = new TextEncoder().encode('Test message');
-      const signature = sign(biometric, sketch, message);
+      const signature = await sign(biometric, sketch, message);
       
       const corruptedSignature = new Uint8Array(signature);
       corruptedSignature[0] ^= 0xff;
       
-      const isValid = verify(vk, message, corruptedSignature);
+      const isValid = await verify(vk, message, corruptedSignature);
       expect(isValid).toBe(false);
     });
     
-    it('should return false for invalid public key', () => {
-      const invalidVk = randomBytes(33);
+    it('should return false for invalid public key', async () => {
+      const invalidVk = randomBytes(32);
       const message = new TextEncoder().encode('Test message');
       const fakeSignature = randomBytes(64);
       
-      const isValid = verify(invalidVk, message, fakeSignature);
+      const isValid = await verify(invalidVk, message, fakeSignature);
       expect(isValid).toBe(false);
     });
   });
   
   describe('Full flow with biometric variation', () => {
-    it('should work with identical biometric (same enrollment and signing)', () => {
+    it('should work with identical biometric (same enrollment and signing)', async () => {
       const biometric = randomBytes(32);
-      const { vk, sketch } = enroll(biometric);
+      const { vk, sketch } = await enroll(biometric);
       
       const message = new TextEncoder().encode('Hello, World!');
-      const signature = sign(biometric, sketch, message);
+      const signature = await sign(biometric, sketch, message);
       
-      expect(verify(vk, message, signature)).toBe(true);
+      await expect(verify(vk, message, signature)).resolves.toBe(true);
     });
     
-    it('should fail with completely different biometric', () => {
+    it('should fail with completely different biometric', async () => {
       const enrollBiometric = randomBytes(32);
       const differentBiometric = randomBytes(32);
       
-      const { vk, sketch } = enroll(enrollBiometric);
+      const { sketch } = await enroll(enrollBiometric);
       const message = new TextEncoder().encode('Hello, World!');
       
       // Signing should fail
-      expect(() => sign(differentBiometric, sketch, message)).toThrow(FuzzyExtractionError);
+      await expect(sign(differentBiometric, sketch, message)).rejects.toBeInstanceOf(FuzzyExtractionError);
     });
     
-    it('should demonstrate error message for biometric mismatch', () => {
+    it('should demonstrate error message for biometric mismatch', async () => {
       const bio1 = randomBytes(32);
       const bio2 = randomBytes(32);
       
-      const { sketch } = enroll(bio1);
+      const { sketch } = await enroll(bio1);
       const message = new TextEncoder().encode('Test');
       
       try {
-        sign(bio2, sketch, message);
+        await sign(bio2, sketch, message);
         fail('Should have thrown FuzzyExtractionError');
       } catch (error) {
         expect(error).toBeInstanceOf(FuzzyExtractionError);
@@ -196,19 +195,19 @@ describe('API', () => {
   });
   
   describe('BiometricSigner class', () => {
-    it('should work like the functional API', () => {
+    it('should work like the functional API', async () => {
       const signer = new BiometricSigner();
       const biometric = randomBytes(32);
       
-      const { vk, sketch } = signer.enroll(biometric);
+      const { vk, sketch } = await signer.enroll(biometric);
       
       const message = new TextEncoder().encode('Test message');
-      const signature = signer.sign(biometric, sketch, message);
+      const signature = await signer.sign(biometric, sketch, message);
       
-      expect(BiometricSigner.verify(vk, message, signature)).toBe(true);
+      await expect(BiometricSigner.verify(vk, message, signature)).resolves.toBe(true);
     });
     
-    it('should support custom configuration', () => {
+    it('should support custom configuration', async () => {
       const signer = new BiometricSigner({
         fuzzy: {
           blockSize: 8,
@@ -217,29 +216,29 @@ describe('API', () => {
       });
       
       const biometric = randomBytes(32);
-      const { vk, sketch } = signer.enroll(biometric);
+      const { vk, sketch } = await signer.enroll(biometric);
       
       const message = new TextEncoder().encode('Test message');
-      const signature = signer.sign(biometric, sketch, message);
+      const signature = await signer.sign(biometric, sketch, message);
       
-      expect(BiometricSigner.verify(vk, message, signature)).toBe(true);
+      await expect(BiometricSigner.verify(vk, message, signature)).resolves.toBe(true);
     });
   });
   
   describe('Edge cases', () => {
-    it('should handle empty message', () => {
+    it('should handle empty message', async () => {
       const biometric = randomBytes(32);
-      const { vk, sketch } = enroll(biometric);
+      const { vk, sketch } = await enroll(biometric);
       
       const emptyMessage = new Uint8Array(0);
-      const signature = sign(biometric, sketch, emptyMessage);
+      const signature = await sign(biometric, sketch, emptyMessage);
       
-      expect(verify(vk, emptyMessage, signature)).toBe(true);
+      await expect(verify(vk, emptyMessage, signature)).resolves.toBe(true);
     });
     
-    it('should handle large message', () => {
+    it('should handle large message', async () => {
       const biometric = randomBytes(32);
-      const { vk, sketch } = enroll(biometric);
+      const { vk, sketch } = await enroll(biometric);
       
       // Create a large message by concatenating random chunks
       const chunks: Uint8Array[] = [];
@@ -253,24 +252,24 @@ describe('API', () => {
         offset += chunk.length;
       }
       
-      const signature = sign(biometric, sketch, largeMessage);
+      const signature = await sign(biometric, sketch, largeMessage);
       
-      expect(verify(vk, largeMessage, signature)).toBe(true);
+      await expect(verify(vk, largeMessage, signature)).resolves.toBe(true);
     });
     
-    it('should handle binary message', () => {
+    it('should handle binary message', async () => {
       const biometric = randomBytes(32);
-      const { vk, sketch } = enroll(biometric);
+      const { vk, sketch } = await enroll(biometric);
       
       const binaryMessage = new Uint8Array([0x00, 0xff, 0x10, 0xfe, 0x00, 0x00, 0xff]);
-      const signature = sign(biometric, sketch, binaryMessage);
+      const signature = await sign(biometric, sketch, binaryMessage);
       
-      expect(verify(vk, binaryMessage, signature)).toBe(true);
+      await expect(verify(vk, binaryMessage, signature)).resolves.toBe(true);
     });
     
-    it('should maintain consistency across multiple sign operations', () => {
+    it('should maintain consistency across multiple sign operations', async () => {
       const biometric = randomBytes(32);
-      const { vk, sketch } = enroll(biometric);
+      const { vk, sketch } = await enroll(biometric);
       
       const messages = [
         new TextEncoder().encode('Message 1'),
@@ -278,16 +277,15 @@ describe('API', () => {
         new TextEncoder().encode('Message 3'),
       ];
       
-      const signatures = messages.map((msg) => sign(biometric, sketch, msg));
+      const signatures = await Promise.all(messages.map((msg) => sign(biometric, sketch, msg)));
       
       // All signatures should verify
       for (let i = 0; i < messages.length; i++) {
-        expect(verify(vk, messages[i], signatures[i])).toBe(true);
+        await expect(verify(vk, messages[i], signatures[i])).resolves.toBe(true);
       }
       
       // Cross-verification should fail
-      expect(verify(vk, messages[0], signatures[1])).toBe(false);
+      await expect(verify(vk, messages[0], signatures[1])).resolves.toBe(false);
     });
   });
 });
-

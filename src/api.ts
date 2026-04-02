@@ -1,5 +1,5 @@
 /**
- * Public API for biometric-based ECDSA signing.
+ * Public API for biometric-based BabyJubJub EdDSA Poseidon signing.
  * 
  * This module exposes the main functions for enrollment, signing, and
  * verification. The "biometric" input is treated as an opaque Uint8Array
@@ -16,14 +16,14 @@
 
 import { fuzzyGen, fuzzyRep } from './fuzzy.js';
 import { derivePrivateKey, getPublicKey, signMessage, verifySignature, isValidPublicKey } from './crypto.js';
-import { EnrollmentResult, FuzzyExtractionError, FuzzyConfig, SignerConfig, BIOMETRIC_LENGTH } from './types.js';
+import { EnrollmentResult, FuzzyExtractionError, SignerConfig, BIOMETRIC_LENGTH } from './types.js';
 
 /**
  * Enrolls a biometric input to generate a verification key and sketch.
  * 
  * This function performs the enrollment phase of biometric-based signing:
  * 1. Uses a fuzzy extractor to derive a stable key from the biometric
- * 2. Derives an ECDSA private key from the stable key
+ * 2. Derives a BabyJubJub EdDSA private key from the stable key
  * 3. Computes the corresponding public key (verification key)
  * 4. Returns the verification key and sketch for storage
  * 
@@ -45,17 +45,17 @@ import { EnrollmentResult, FuzzyExtractionError, FuzzyConfig, SignerConfig, BIOM
  * // Store sketch securely, distribute vk for verification
  * ```
  */
-export function enroll(b: Uint8Array, config?: SignerConfig): EnrollmentResult {
+export async function enroll(b: Uint8Array, config?: SignerConfig): Promise<EnrollmentResult> {
   validateBiometricInput(b);
   
   // Generate stable key and sketch using fuzzy extractor
   const { key, sketch } = fuzzyGen(b, config?.fuzzy);
   
-  // Derive ECDSA private key from stable key
+  // Derive EdDSA private key seed from stable key
   const privateKey = derivePrivateKey(key);
   
   // Compute public key (verification key)
-  const vk = getPublicKey(privateKey, true);
+  const vk = await getPublicKey(privateKey);
   
   return { vk, sketch };
 }
@@ -65,8 +65,8 @@ export function enroll(b: Uint8Array, config?: SignerConfig): EnrollmentResult {
  * 
  * This function performs biometric-based signing:
  * 1. Uses the fuzzy extractor to reproduce the stable key from biometric and sketch
- * 2. Derives the same ECDSA private key as during enrollment
- * 3. Signs the message using ECDSA
+ * 2. Derives the same BabyJubJub EdDSA private key as during enrollment
+ * 3. Signs the message using BabyJubJub EdDSA Poseidon
  * 
  * The biometric input must be "close enough" to the enrollment biometric
  * for the fuzzy extractor to successfully reproduce the key. If the
@@ -76,7 +76,7 @@ export function enroll(b: Uint8Array, config?: SignerConfig): EnrollmentResult {
  * @param sketch - Sketch from enrollment (fuzzy extractor helper data)
  * @param message - Message to sign as Uint8Array
  * @param config - Optional configuration for the fuzzy extractor
- * @returns ECDSA signature as Uint8Array (64 bytes, compact format)
+ * @returns EdDSA signature as Uint8Array (64 bytes, packed format)
  * @throws FuzzyExtractionError if biometric reproduction fails
  * 
  * @example
@@ -93,12 +93,12 @@ export function enroll(b: Uint8Array, config?: SignerConfig): EnrollmentResult {
  * }
  * ```
  */
-export function sign(
+export async function sign(
   b: Uint8Array,
   sketch: Uint8Array,
   message: Uint8Array,
   config?: SignerConfig
-): Uint8Array {
+): Promise<Uint8Array> {
   validateBiometricInput(b);
   
   // Reproduce stable key using fuzzy extractor
@@ -111,7 +111,7 @@ export function sign(
     );
   }
   
-  // Derive ECDSA private key from stable key
+  // Derive EdDSA private key seed from stable key
   const privateKey = derivePrivateKey(key);
   
   // Sign the message
@@ -119,7 +119,7 @@ export function sign(
 }
 
 /**
- * Verifies an ECDSA signature against a message and verification key.
+ * Verifies a BabyJubJub EdDSA Poseidon signature against a message and verification key.
  * 
  * This function verifies signatures without requiring biometric input.
  * It only needs the public verification key from enrollment.
@@ -141,16 +141,24 @@ export function sign(
  * }
  * ```
  */
-export function verify(
+export async function verify(
   vk: Uint8Array,
   message: Uint8Array,
   signature: Uint8Array
-): boolean {
+): Promise<boolean> {
   // Validate public key format
-  if (!isValidPublicKey(vk)) {
+  return verifyWithValidation(vk, message, signature);
+}
+
+async function verifyWithValidation(
+  vk: Uint8Array,
+  message: Uint8Array,
+  signature: Uint8Array
+): Promise<boolean> {
+  if (!(await isValidPublicKey(vk))) {
     return false;
   }
-  
+
   return verifySignature(message, signature, vk);
 }
 
@@ -212,7 +220,7 @@ export class BiometricSigner {
    * Enrolls a biometric input to generate verification key and sketch.
    * @see enroll
    */
-  enroll(b: Uint8Array): EnrollmentResult {
+  enroll(b: Uint8Array): Promise<EnrollmentResult> {
     return enroll(b, this.config);
   }
   
@@ -220,17 +228,16 @@ export class BiometricSigner {
    * Signs a message using biometric authentication.
    * @see sign
    */
-  sign(b: Uint8Array, sketch: Uint8Array, message: Uint8Array): Uint8Array {
+  sign(b: Uint8Array, sketch: Uint8Array, message: Uint8Array): Promise<Uint8Array> {
     return sign(b, sketch, message, this.config);
   }
   
   /**
-   * Verifies an ECDSA signature against a message and verification key.
+   * Verifies a BabyJubJub EdDSA Poseidon signature against a message and verification key.
    * This is a static method as it doesn't require biometric input.
    * @see verify
    */
-  static verify(vk: Uint8Array, message: Uint8Array, signature: Uint8Array): boolean {
+  static async verify(vk: Uint8Array, message: Uint8Array, signature: Uint8Array): Promise<boolean> {
     return verify(vk, message, signature);
   }
 }
-

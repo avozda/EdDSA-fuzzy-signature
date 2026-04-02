@@ -1,109 +1,79 @@
 /**
- * Cryptographic utilities for ECDSA operations and key derivation.
- *
- * This module provides wrappers around the @noble/curves library for
- * ECDSA signing and verification on the secp256k1 curve, as well as
- * key derivation functions to convert raw entropy into valid ECDSA keys.
+ * Cryptographic utilities for BabyJubJub EdDSA with Poseidon.
  */
 
-import { secp256k1 } from "@noble/curves/secp256k1";
+import { buildEddsa } from "circomlibjs";
 import { sha256 } from "@noble/hashes/sha256.js";
 import { hkdf } from "@noble/hashes/hkdf.js";
 import { KEY_LENGTH } from "./types.js";
 
-/** Application-specific info string for ECDSA key derivation */
-const ECDSA_KEY_INFO = "ecdsa-secp256k1-key";
+const PRIVATE_KEY_INFO = "eddsa-babyjubjub-poseidon-key";
+const SUB_ORDER =
+  2736030358979909402780800718157159386076813972158567259200215660948447373041n;
 
-/** Application-specific info string for signing nonce derivation */
-const SIGNING_NONCE_INFO = "ecdsa-signing-nonce";
+let eddsaPromise: Promise<any> | null = null;
+
+function getEddsa(): Promise<any> {
+  if (!eddsaPromise) {
+    eddsaPromise = buildEddsa();
+  }
+  return eddsaPromise;
+}
 
 /**
- * Derives an ECDSA private key from raw entropy using HKDF.
- *
- * The derived key is reduced modulo the curve order to ensure it's
- * a valid secp256k1 private key (1 <= key < n).
- *
- * @param entropy - Raw entropy bytes (typically 32 bytes from fuzzy extractor)
- * @param salt - Optional salt for domain separation
- * @returns Valid ECDSA private key as Uint8Array
+ * Derives a BabyJubJub private key seed from raw entropy using HKDF.
  */
 export function derivePrivateKey(
   entropy: Uint8Array,
   salt: Uint8Array = new Uint8Array(0)
 ): Uint8Array {
-  // Use HKDF to derive key material
-  // We derive extra bytes to reduce bias when reducing modulo curve order
-  const keyMaterial = hkdf(sha256, entropy, salt, ECDSA_KEY_INFO, 64);
-
-  // Convert to bigint and reduce modulo curve order
-  const n = secp256k1.CURVE.n;
-  let keyNum = bytesToBigInt(keyMaterial);
-
-  // Reduce modulo (n - 1) and add 1 to ensure key is in range [1, n-1]
-  keyNum = (keyNum % (n - 1n)) + 1n;
-
-  return bigIntToBytes(keyNum, KEY_LENGTH);
+  return hkdf(sha256, entropy, salt, PRIVATE_KEY_INFO, KEY_LENGTH);
 }
 
 /**
- * Computes the ECDSA public key from a private key.
- *
- * @param privateKey - ECDSA private key as Uint8Array
- * @param compressed - Whether to return compressed format (default: true)
- * @returns Public key as Uint8Array (33 bytes compressed, 65 bytes uncompressed)
+ * Computes a packed BabyJubJub public key from a private key seed.
  */
-export function getPublicKey(
-  privateKey: Uint8Array,
-  compressed: boolean = true
-): Uint8Array {
-  return secp256k1.getPublicKey(privateKey, compressed);
+export async function getPublicKey(privateKey: Uint8Array): Promise<Uint8Array> {
+  const eddsa = await getEddsa();
+  const pub = eddsa.prv2pub(privateKey);
+  return eddsa.babyJub.packPoint(pub);
 }
 
 /**
- * Signs a message using ECDSA with the secp256k1 curve.
- *
- * The signature follows RFC 6979 for deterministic nonce generation,
- * ensuring the same message and key always produce the same signature.
- *
- * @param message - Message to sign (will be hashed with SHA-256)
- * @param privateKey - ECDSA private key
- * @returns DER-encoded signature as Uint8Array
+ * Signs a message using BabyJubJub EdDSA Poseidon.
  */
-export function signMessage(
+export async function signMessage(
   message: Uint8Array,
   privateKey: Uint8Array
-): Uint8Array {
-  // Hash the message first
-  const messageHash = sha256(message);
-
-  // Sign the hash using secp256k1 with lowS for malleability protection
-  const signature = secp256k1.sign(messageHash, privateKey, { lowS: true });
-
-  // Return compact signature format (r || s, 64 bytes)
-  return signature.toCompactRawBytes();
+): Promise<Uint8Array> {
+  const eddsa = await getEddsa();
+  const msgField = messageToFieldElement(message);
+  const signature = eddsa.signPoseidon(privateKey, msgField);
+  return eddsa.packSignature(signature);
 }
 
 /**
- * Verifies an ECDSA signature against a message and public key.
- *
- * @param message - Original message that was signed
- * @param signature - Signature to verify (compact format)
- * @param publicKey - ECDSA public key
- * @returns true if signature is valid, false otherwise
+ * Verifies a BabyJubJub EdDSA Poseidon signature.
  */
-export function verifySignature(
+export async function verifySignature(
   message: Uint8Array,
   signature: Uint8Array,
   publicKey: Uint8Array
-): boolean {
+): Promise<boolean> {
   try {
-    // Hash the message
-    const messageHash = sha256(message);
+    const eddsa = await getEddsa();
+    const pub = eddsa.babyJub.unpackPoint(new Uint8Array(publicKey));
+    if (!pub || !eddsa.babyJub.inCurve(pub)) {
+      return false;
+    }
+    const unpackedSignature = eddsa.unpackSignature(signature);
+    if (!unpackedSignature.R8 || !eddsa.babyJub.inCurve(unpackedSignature.R8)) {
+      return false;
+    }
 
-    // Verify the signature
-    return secp256k1.verify(signature, messageHash, publicKey, { lowS: true });
+    const msgField = messageToFieldElement(message);
+    return eddsa.verifyPoseidon(msgField, unpackedSignature, pub);
   } catch {
-    // Any error during verification means invalid signature
     return false;
   }
 }
@@ -120,50 +90,61 @@ function bytesToBigInt(bytes: Uint8Array): bigint {
 }
 
 /**
- * Converts a bigint to a byte array of specified length (big-endian).
- */
-function bigIntToBytes(num: bigint, length: number): Uint8Array {
-  const result = new Uint8Array(length);
-  let temp = num;
-  for (let i = length - 1; i >= 0; i--) {
-    result[i] = Number(temp & 0xffn);
-    temp >>= 8n;
-  }
-  return result;
-}
-
-/**
- * Validates that a byte array represents a valid secp256k1 private key.
+ * Validates that a byte array represents a valid BabyJubJub private key seed.
  *
  * @param key - Byte array to validate
  * @returns true if key is valid, false otherwise
  */
 export function isValidPrivateKey(key: Uint8Array): boolean {
-  if (key.length !== KEY_LENGTH) {
+  if (!(key instanceof Uint8Array) || key.length !== KEY_LENGTH) {
+    return false;
+  }
+
+  const keyNum = bytesToBigInt(key);
+  if (keyNum === 0n) {
+    return false;
+  }
+
+  return keyNum < (1n << 256n);
+}
+
+/**
+ * Validates that a byte array represents a valid packed BabyJubJub public key.
+ */
+export async function isValidPublicKey(key: Uint8Array): Promise<boolean> {
+  if (!(key instanceof Uint8Array) || key.length !== KEY_LENGTH) {
     return false;
   }
 
   try {
-    const keyNum = bytesToBigInt(key);
-    const n = secp256k1.CURVE.n;
-    return keyNum > 0n && keyNum < n;
+    const eddsa = await getEddsa();
+    const point = eddsa.babyJub.unpackPoint(new Uint8Array(key));
+    return !!point && eddsa.babyJub.inCurve(point) && eddsa.babyJub.inSubgroup(point);
   } catch {
     return false;
   }
 }
 
-/**
- * Validates that a byte array represents a valid secp256k1 public key.
- *
- * @param key - Byte array to validate (33 or 65 bytes)
- * @returns true if key is valid, false otherwise
- */
-export function isValidPublicKey(key: Uint8Array): boolean {
-  try {
-    // This will throw if the key is invalid
-    secp256k1.ProjectivePoint.fromHex(key);
-    return true;
-  } catch {
-    return false;
+function messageToFieldElement(message: Uint8Array): Uint8Array {
+  const digest = sha256(message);
+  const reduced = bytesToBigIntLE(digest) % SUB_ORDER;
+  return bigIntToBytesLE(reduced, KEY_LENGTH);
+}
+
+function bytesToBigIntLE(bytes: Uint8Array): bigint {
+  let result = 0n;
+  for (let i = bytes.length - 1; i >= 0; i--) {
+    result = (result << 8n) | BigInt(bytes[i]);
   }
+  return result;
+}
+
+function bigIntToBytesLE(value: bigint, length: number): Uint8Array {
+  const result = new Uint8Array(length);
+  let temp = value;
+  for (let i = 0; i < length; i++) {
+    result[i] = Number(temp & 0xffn);
+    temp >>= 8n;
+  }
+  return result;
 }

@@ -1,7 +1,7 @@
 {
-  "name": "ecdsa-fuzzy-signature",
-  "version": "1.0.0",
-  "description": "Biometric-based signing using fuzzy extractor and ECDSA",
+  "name": "eddsa-fuzzy-signature",
+  "version": "2.0.0",
+  "description": "Biometric-based signing using fuzzy extractor and BabyJubJub EdDSA Poseidon",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "type": "module",
@@ -15,18 +15,21 @@
   "keywords": [
     "biometric",
     "fuzzy-extractor",
-    "ecdsa",
+    "eddsa",
     "signature",
     "cryptography",
-    "secp256k1"
+    "babyjubjub",
+    "poseidon",
+    "zk"
   ],
   "license": "GPL-3.0",
   "engines": {
     "node": ">=18.0.0"
   },
   "dependencies": {
-    "@noble/curves": "^1.7.0",
-    "@noble/hashes": "^1.6.1"
+    "@noble/hashes": "^1.6.1",
+    "circomlibjs": "^0.1.7",
+    "ffjavascript": "^0.3.1"
   },
   "devDependencies": {
     "@types/jest": "^29.5.14",

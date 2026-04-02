@@ -1,7 +1,7 @@
 /**
- * ecdsa-fuzzy-signature
+ * eddsa-fuzzy-signature
  *
- * A TypeScript library for biometric-based signing using fuzzy extractors and ECDSA.
+ * A TypeScript library for biometric-based signing using fuzzy extractors and BabyJubJub EdDSA Poseidon.
  *
  * This library provides a simple API to:
  * - Enroll biometric data to generate a verification key and sketch
@@ -13,18 +13,20 @@
  *
  * @example
  * ```typescript
- * import { enroll, sign, verify } from 'ecdsa-fuzzy-signature';
+ * import { enroll, sign, verify } from 'eddsa-fuzzy-signature';
  *
- * // Enrollment
- * const biometric = new Uint8Array(32); // Your preprocessed biometric
- * const { vk, sketch } = enroll(biometric);
+ * async function run() {
+ *   // Enrollment
+ *   const biometric = new Uint8Array(32); // Your preprocessed biometric
+ *   const { vk, sketch } = await enroll(biometric);
  *
- * // Signing
- * const message = new TextEncoder().encode('Hello, World!');
- * const signature = sign(biometric, sketch, message);
+ *   // Signing
+ *   const message = new TextEncoder().encode('Hello, World!');
+ *   const signature = await sign(biometric, sketch, message);
  *
- * // Verification
- * const isValid = verify(vk, message, signature);
+ *   // Verification
+ *   const isValid = await verify(vk, message, signature);
+ * }
  * ```
  *
  * @packageDocumentation

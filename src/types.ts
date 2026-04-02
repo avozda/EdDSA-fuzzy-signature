@@ -15,7 +15,7 @@ export interface FuzzyGenResult {
  * and the sketch needed for future signing operations.
  */
 export interface EnrollmentResult {
-  /** ECDSA public key (verification key) in compressed format */
+  /** Packed BabyJubJub public key (verification key), 32 bytes */
   vk: Uint8Array;
   /** Fuzzy extractor sketch for reproducing the private key */
   sketch: Uint8Array;

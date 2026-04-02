@@ -51,135 +51,125 @@ describe('Crypto Utilities', () => {
   });
   
   describe('getPublicKey', () => {
-    it('should compute public key from private key (compressed)', () => {
+    it('should compute packed BabyJubJub public key from private key', async () => {
       const entropy = randomBytes(32);
       const privateKey = derivePrivateKey(entropy);
-      const publicKey = getPublicKey(privateKey, true);
+      const publicKey = await getPublicKey(privateKey);
       
       expect(publicKey).toBeInstanceOf(Uint8Array);
-      expect(publicKey.length).toBe(33); // Compressed format
-      expect(isValidPublicKey(publicKey)).toBe(true);
+      expect(publicKey.length).toBe(32); // Packed BabyJubJub point
+      await expect(isValidPublicKey(publicKey)).resolves.toBe(true);
     });
     
-    it('should compute public key from private key (uncompressed)', () => {
-      const entropy = randomBytes(32);
-      const privateKey = derivePrivateKey(entropy);
-      const publicKey = getPublicKey(privateKey, false);
-      
-      expect(publicKey).toBeInstanceOf(Uint8Array);
-      expect(publicKey.length).toBe(65); // Uncompressed format
-      expect(isValidPublicKey(publicKey)).toBe(true);
-    });
-    
-    it('should produce deterministic public keys', () => {
+    it('should produce deterministic public keys', async () => {
       const entropy = randomBytes(32);
       const privateKey = derivePrivateKey(entropy);
       
-      const pub1 = getPublicKey(privateKey);
-      const pub2 = getPublicKey(privateKey);
+      const pub1 = await getPublicKey(privateKey);
+      const pub2 = await getPublicKey(privateKey);
       
       expect(Buffer.from(pub1).equals(Buffer.from(pub2))).toBe(true);
     });
   });
   
   describe('signMessage and verifySignature', () => {
-    it('should sign and verify a message', () => {
+    it('should sign and verify a message', async () => {
       const entropy = randomBytes(32);
       const privateKey = derivePrivateKey(entropy);
-      const publicKey = getPublicKey(privateKey);
+      const publicKey = await getPublicKey(privateKey);
       
       const message = new TextEncoder().encode('Hello, World!');
-      const signature = signMessage(message, privateKey);
+      const signature = await signMessage(message, privateKey);
       
       expect(signature).toBeInstanceOf(Uint8Array);
       expect(signature.length).toBe(64); // Compact signature format
       
-      const isValid = verifySignature(message, signature, publicKey);
+      const isValid = await verifySignature(message, signature, publicKey);
       expect(isValid).toBe(true);
     });
     
-    it('should fail verification with wrong message', () => {
+    it('should fail verification with wrong message', async () => {
       const entropy = randomBytes(32);
       const privateKey = derivePrivateKey(entropy);
-      const publicKey = getPublicKey(privateKey);
+      const publicKey = await getPublicKey(privateKey);
       
       const message = new TextEncoder().encode('Hello, World!');
-      const signature = signMessage(message, privateKey);
+      const signature = await signMessage(message, privateKey);
       
       const wrongMessage = new TextEncoder().encode('Hello, Universe!');
-      const isValid = verifySignature(wrongMessage, signature, publicKey);
+      const isValid = await verifySignature(wrongMessage, signature, publicKey);
       
       expect(isValid).toBe(false);
     });
     
-    it('should fail verification with wrong public key', () => {
+    it('should fail verification with wrong public key', async () => {
       const entropy1 = randomBytes(32);
       const entropy2 = randomBytes(32);
       
       const privateKey1 = derivePrivateKey(entropy1);
       const privateKey2 = derivePrivateKey(entropy2);
-      const publicKey2 = getPublicKey(privateKey2);
+      const publicKey2 = await getPublicKey(privateKey2);
       
       const message = new TextEncoder().encode('Hello, World!');
-      const signature = signMessage(message, privateKey1);
+      const signature = await signMessage(message, privateKey1);
       
-      const isValid = verifySignature(message, signature, publicKey2);
+      const isValid = await verifySignature(message, signature, publicKey2);
       expect(isValid).toBe(false);
     });
     
-    it('should fail verification with corrupted signature', () => {
+    it('should fail verification with corrupted signature', async () => {
       const entropy = randomBytes(32);
       const privateKey = derivePrivateKey(entropy);
-      const publicKey = getPublicKey(privateKey);
+      const publicKey = await getPublicKey(privateKey);
       
       const message = new TextEncoder().encode('Hello, World!');
-      const signature = signMessage(message, privateKey);
+      const signature = await signMessage(message, privateKey);
       
       // Corrupt the signature
       const corruptedSignature = new Uint8Array(signature);
       corruptedSignature[0] ^= 0xff;
       
-      const isValid = verifySignature(message, corruptedSignature, publicKey);
+      const isValid = await verifySignature(message, corruptedSignature, publicKey);
       expect(isValid).toBe(false);
     });
     
-    it('should produce deterministic signatures (RFC 6979)', () => {
+    it('should produce deterministic signatures', async () => {
       const entropy = randomBytes(32);
       const privateKey = derivePrivateKey(entropy);
       
       const message = new TextEncoder().encode('Hello, World!');
       
-      const sig1 = signMessage(message, privateKey);
-      const sig2 = signMessage(message, privateKey);
+      const sig1 = await signMessage(message, privateKey);
+      const sig2 = await signMessage(message, privateKey);
       
       expect(Buffer.from(sig1).equals(Buffer.from(sig2))).toBe(true);
     });
     
-    it('should handle empty message', () => {
+    it('should handle empty message', async () => {
       const entropy = randomBytes(32);
       const privateKey = derivePrivateKey(entropy);
-      const publicKey = getPublicKey(privateKey);
+      const publicKey = await getPublicKey(privateKey);
       
       const message = new Uint8Array(0);
-      const signature = signMessage(message, privateKey);
+      const signature = await signMessage(message, privateKey);
       
-      const isValid = verifySignature(message, signature, publicKey);
+      const isValid = await verifySignature(message, signature, publicKey);
       expect(isValid).toBe(true);
     });
     
-    it('should handle large message', () => {
+    it('should handle large message', async () => {
       const entropy = randomBytes(32);
       const privateKey = derivePrivateKey(entropy);
-      const publicKey = getPublicKey(privateKey);
+      const publicKey = await getPublicKey(privateKey);
       
       // Create a message larger than typical (50KB)
       const message = new Uint8Array(50000);
       for (let i = 0; i < 50000; i++) {
         message[i] = i % 256;
       }
-      const signature = signMessage(message, privateKey);
+      const signature = await signMessage(message, privateKey);
       
-      const isValid = verifySignature(message, signature, publicKey);
+      const isValid = await verifySignature(message, signature, publicKey);
       expect(isValid).toBe(true);
     });
   });
@@ -207,31 +197,22 @@ describe('Crypto Utilities', () => {
   });
   
   describe('isValidPublicKey', () => {
-    it('should return true for valid compressed public key', () => {
+    it('should return true for valid packed public key', async () => {
       const entropy = randomBytes(32);
       const privateKey = derivePrivateKey(entropy);
-      const publicKey = getPublicKey(privateKey, true);
+      const publicKey = await getPublicKey(privateKey);
       
-      expect(isValidPublicKey(publicKey)).toBe(true);
+      await expect(isValidPublicKey(publicKey)).resolves.toBe(true);
     });
     
-    it('should return true for valid uncompressed public key', () => {
-      const entropy = randomBytes(32);
-      const privateKey = derivePrivateKey(entropy);
-      const publicKey = getPublicKey(privateKey, false);
-      
-      expect(isValidPublicKey(publicKey)).toBe(true);
+    it('should return false for invalid public key', async () => {
+      const invalidKey = randomBytes(32);
+      await expect(isValidPublicKey(invalidKey)).resolves.toBe(false);
     });
     
-    it('should return false for invalid public key', () => {
-      const invalidKey = randomBytes(33);
-      expect(isValidPublicKey(invalidKey)).toBe(false);
-    });
-    
-    it('should return false for wrong length', () => {
+    it('should return false for wrong length', async () => {
       const shortKey = randomBytes(16);
-      expect(isValidPublicKey(shortKey)).toBe(false);
+      await expect(isValidPublicKey(shortKey)).resolves.toBe(false);
     });
   });
 });
-
